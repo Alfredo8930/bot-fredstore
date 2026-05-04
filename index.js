@@ -354,10 +354,6 @@ async function startBot() {
                 `*── GESTIÓN DEL GRUPO ──*\n\n` +
                 `👤 *Expulsar participante*\n` +
                 `└ .expulsar @usuario\n\n` +
-                `📢 *Enviar aviso a todos*\n` +
-                `└ .aviso Texto del mensaje\n\n` +
-                `💬 *Frase de bienvenida personalizada*\n` +
-                `└ .frase Tu frase aquí\n\n` +
                 `🔒 *Cerrar grupo* — solo admins escriben\n` +
                 `└ .cerrargrupo\n\n` +
                 `🔓 *Abrir grupo* — todos pueden escribir\n` +
