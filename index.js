@@ -553,24 +553,48 @@ async function startBot() {
             const numero = user.split("@")[0];
             const tag = "@" + numero;
     
-            // 🔥 TRAER FRASE GUARDADA
+            // 🔥 Nombre del grupo
+            let nombreGrupo = "Grupo";
+            try {
+                const meta = await sock.groupMetadata(id);
+                nombreGrupo = meta.subject;
+            } catch {}
+    
+            // 🔥 Frase personalizada del admin
             let frase = await getFraseBienvenida(id);
     
-            // Si no hay frase, usar una por defecto
             if (!frase) {
-                frase = "👋 Bienvenido {user}\n\n🎉 Disfruta el grupo";
+                frase =
+    `🌸 BIENVENIDOS 🎀
+    ⇒ LEER REGLAS, LUEGO NO ME RECLAMEN ⇒
+    
+    🌸 Pedidos se entregan de 10min a 3hrs
+    🌸 Todo se resuelve y atiende en orden
+    🌸 REPORTES TARDAN 1-4 días
+    
+    ➡️ SI TU REPORTE PASA DE LOS 4 DÍAS, PASA A “SALDO A FAVOR”
+    NO SE REEMBOLSA, NO INSISTAS
+    
+    🕒 SOPORTE DE LUNES A SÁBADO`;
             }
     
-            // 🔥 Reemplazar {user} por la mención real
-            const mensaje = frase.replace("{user}", tag);
+            // 🔥 Mensaje estilo tarjeta
+            const mensaje =
+    `🌟 *¡BIENVENIDO/A!* 🌟
+    
+    👤 *Usuario:* ${tag}
+    👥 *Grupo:* ${nombreGrupo}
+    
+    📌 *Descripción:*
+    ${frase}`;
     
             await sock.sendMessage(id, {
                 text: mensaje,
-                mentions: [user] // 👈 SOLO el nuevo
+                mentions: [user]
             });
     
         } catch (err) {
-            console.error("Error bienvenida:", err.message);
+            console.error("Error bienvenida:", err);
         }
     });
 }
