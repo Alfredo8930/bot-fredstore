@@ -481,12 +481,24 @@ async function startBot() {
                 mentions = meta.participants.map(p => p.id);
             } catch {}
 
-            const mensajeAviso =
-                `📢 *AVISO IMPORTANTE*\n` +
-                `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
-                `${textoAviso}\n\n` +
-                `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
-                `@todos`;
+        let mentions = [];
+        let textoMenciones = "";
+        
+        try {
+            const meta = await sock.groupMetadata(groupId);
+            mentions = meta.participants.map(p => p.id);
+        
+            textoMenciones = mentions
+                .map(jid => "@" + jid.split("@")[0])
+                .join(" ");
+        } catch {}
+        
+        const mensajeAviso =
+            `📢 *AVISO IMPORTANTE*\n` +
+            `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
+            `${textoAviso}\n\n` +
+            `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
+            `${textoMenciones}`;
 
             await sock.sendMessage(from, {
                 text: mensajeAviso,
@@ -541,19 +553,30 @@ async function startBot() {
     // ==============================
     sock.ev.on("group-participants.update", async ({ id, participants, action }) => {
         if (action !== "add") return;
-
-        const bienvenida =
-            `╔════════════════════════════╗\n` +
-            `║     🤖  *A R T E M I S*     ║\n` +
-            `╚════════════════════════════╝\n\n` +
-            `¡Bienvenido al grupo! 👋\n\n` +
-            `Estoy aquí para brindarte una experiencia\n` +
-            `de compra rápida, segura y sin complicaciones.\n\n`;
-
+    
         try {
-            await sock.sendMessage(id, { text: bienvenida });
+            const user = participants[0];
+            const numero = user.split("@")[0];
+            const tag = "@" + numero;
+    
+            // 🔥 TRAER FRASE GUARDADA
+            let frase = await getFraseBienvenida(id);
+    
+            // Si no hay frase, usar una por defecto
+            if (!frase) {
+                frase = "👋 Bienvenido {user}\n\n🎉 Disfruta el grupo";
+            }
+    
+            // 🔥 Reemplazar {user} por la mención real
+            const mensaje = frase.replace("{user}", tag);
+    
+            await sock.sendMessage(id, {
+                text: mensaje,
+                mentions: [user] // 👈 SOLO el nuevo
+            });
+    
         } catch (err) {
-            console.error("Error enviando bienvenida:", err.message);
+            console.error("Error bienvenida:", err.message);
         }
     });
 }
