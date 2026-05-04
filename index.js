@@ -76,6 +76,21 @@ async function deleteComando(groupId, comando) {
     );
 }
 
+// Obtiene la frase de bienvenida del grupo (si la guardó el admin)
+async function getFraseBienvenida(groupId) {
+    const doc = await col("grupos").findOne({ _id: groupId });
+    return doc?.fraseBienvenida || null;
+}
+
+// Guarda una frase de bienvenida personalizada para el grupo
+async function saveFraseBienvenida(groupId, frase) {
+    await col("grupos").updateOne(
+        { _id: groupId },
+        { $set: { fraseBienvenida: frase } },
+        { upsert: true }
+    );
+}
+
 // Al leer comandos reponemos el punto al inicio de cada clave
 function normalizarComandos(raw) {
     const result = {};
@@ -103,7 +118,7 @@ async function isAdmin(sock, groupId, lidJid, senderJid) {
 
 const RESERVADOS = [
     ".nuevo", ".editar", ".eliminar", ".listar",
-    ".ayuda", ".cerrargrupo", ".abrirgrupo", ".expulsar"
+    ".ayuda", ".cerrargrupo", ".abrirgrupo", ".expulsar", ".aviso", ".frase"
 ];
 
 // ==============================
@@ -339,6 +354,10 @@ async function startBot() {
                 `*── GESTIÓN DEL GRUPO ──*\n\n` +
                 `👤 *Expulsar participante*\n` +
                 `└ .expulsar @usuario\n\n` +
+                `📢 *Enviar aviso a todos*\n` +
+                `└ .aviso Texto del mensaje\n\n` +
+                `💬 *Frase de bienvenida personalizada*\n` +
+                `└ .frase Tu frase aquí\n\n` +
                 `🔒 *Cerrar grupo* — solo admins escriben\n` +
                 `└ .cerrargrupo\n\n` +
                 `🔓 *Abrir grupo* — todos pueden escribir\n` +
@@ -427,6 +446,82 @@ async function startBot() {
             } catch {
                 await sock.sendMessage(from, { text: "❌ El bot debe ser administrador del grupo." });
             }
+            return;
+        }
+
+        // ==============================
+        // .aviso — menciona a todos con un mensaje destacado
+        // Solo admins. Formato:
+        //   .aviso Texto en una línea
+        //   o
+        //   .aviso
+        //   Texto multilínea
+        // ==============================
+        if (firstLine.startsWith(".aviso")) {
+            if (!await isAdmin(sock, groupId, lidJid, senderJid)) {
+                await sock.sendMessage(from, { text: "⛔ Solo administradores." });
+                return;
+            }
+
+            const restoLinea1 = lineas[0].slice(6).trim();
+            const restoLineas = lineas.slice(1).join("\n").trim();
+            const textoAviso = [restoLinea1, restoLineas].filter(Boolean).join("\n").trim();
+
+            if (!textoAviso) {
+                await sock.sendMessage(from, {
+                    text: "❌ Escribe el aviso:\n.aviso Texto del aviso\n\nO en varias líneas:\n.aviso\nLínea 1\nLínea 2"
+                });
+                return;
+            }
+
+            // Obtener todos los participantes para mencionar
+            let mentions = [];
+            try {
+                const meta = await sock.groupMetadata(groupId);
+                mentions = meta.participants.map(p => p.id);
+            } catch {}
+
+            const mensajeAviso =
+                `📢 *AVISO IMPORTANTE*\n` +
+                `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
+                `${textoAviso}\n\n` +
+                `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+                `_@everyone_`;
+
+            await sock.sendMessage(from, {
+                text: mensajeAviso,
+                mentions
+            });
+            return;
+        }
+
+        // ==============================
+        // .frase — guarda frase de bienvenida personalizada
+        // Formato:
+        //   .frase Tu frase aquí
+        //   o
+        //   .frase
+        //   Frase multilínea
+        // ==============================
+        if (firstLine.startsWith(".frase")) {
+            if (!await isAdmin(sock, groupId, lidJid, senderJid)) {
+                await sock.sendMessage(from, { text: "⛔ Solo administradores." });
+                return;
+            }
+
+            const restoLinea1 = lineas[0].slice(6).trim();
+            const restoLineas = lineas.slice(1).join("\n").trim();
+            const frase = [restoLinea1, restoLineas].filter(Boolean).join("\n").trim();
+
+            if (!frase) {
+                await sock.sendMessage(from, {
+                    text: "❌ Escribe la frase:\n.frase Bienvenido a nuestro grupo 🎉\n\nEsta frase aparecerá cuando alguien entre al grupo."
+                });
+                return;
+            }
+
+            await saveFraseBienvenida(groupId, frase);
+            await sock.sendMessage(from, { text: `✅ Frase de bienvenida guardada.` });
             return;
         }
 
