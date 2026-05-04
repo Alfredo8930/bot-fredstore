@@ -462,48 +462,42 @@ async function startBot() {
                 await sock.sendMessage(from, { text: "⛔ Solo administradores." });
                 return;
             }
-
+        
             const restoLinea1 = lineas[0].slice(6).trim();
             const restoLineas = lineas.slice(1).join("\n").trim();
             const textoAviso = [restoLinea1, restoLineas].filter(Boolean).join("\n").trim();
-
+        
             if (!textoAviso) {
                 await sock.sendMessage(from, {
-                    text: "❌ Escribe el aviso:\n.aviso Texto del aviso\n\nO en varias líneas:\n.aviso\nLínea 1\nLínea 2"
+                    text: "❌ Escribe el aviso:\n.aviso Texto del aviso"
                 });
                 return;
             }
-
-            // Obtener todos los participantes para mencionar
+        
             let mentions = [];
+            let textoMenciones = "";
+        
             try {
                 const meta = await sock.groupMetadata(groupId);
                 mentions = meta.participants.map(p => p.id);
+        
+                textoMenciones = mentions
+                    .map(jid => "@" + jid.split("@")[0])
+                    .join(" ");
             } catch {}
-
-        let mentions = [];
-        let textoMenciones = "";
         
-        try {
-            const meta = await sock.groupMetadata(groupId);
-            mentions = meta.participants.map(p => p.id);
+            const mensajeAviso =
+                `📢 *AVISO IMPORTANTE*\n` +
+                `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
+                `${textoAviso}\n\n` +
+                `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
+                `${textoMenciones}`;
         
-            textoMenciones = mentions
-                .map(jid => "@" + jid.split("@")[0])
-                .join(" ");
-        } catch {}
-        
-        const mensajeAviso =
-            `📢 *AVISO IMPORTANTE*\n` +
-            `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
-            `${textoAviso}\n\n` +
-            `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
-            `${textoMenciones}`;
-
             await sock.sendMessage(from, {
                 text: mensajeAviso,
                 mentions
             });
+        
             return;
         }
 
