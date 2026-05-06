@@ -399,15 +399,31 @@ async function startBot() {
             return;
         }
 
-        // .listar
+        // .listar — muestra comandos de texto e imágenes
         if (firstLine === ".listar") {
             if (!await isAdmin(sock, groupId, lidJid, senderJid)) {
                 await sock.sendMessage(from, { text: "⛔ Solo administradores." });
                 return;
             }
             const actuales = await getComandos(groupId);
-            const lista = Object.keys(actuales).join("\n");
-            await sock.sendMessage(from, { text: `📋 *Comandos activos en este grupo:*\n\n${lista}` });
+            const imgs = await listarImagenes(groupId);
+
+            const textoComandos = Object.keys(actuales).length > 0
+                ? Object.keys(actuales).join("\n")
+                : "_Ninguno_";
+
+            const textoImgs = imgs.length > 0
+                ? imgs.join("\n")
+                : "_Ninguna_";
+
+            await sock.sendMessage(from, {
+                text:
+                    `╔═══════╗\n` +
+                    `  📋 *COMANDOS ACTIVOS*\n` +
+                    `╚═══════╝\n\n` +
+                    `*── Texto ──*\n${textoComandos}\n\n` +
+                    `*── Imágenes 🖼️ ──*\n${textoImgs}`
+            });
             return;
         }
 
@@ -415,13 +431,11 @@ async function startBot() {
         if (firstLine === ".ayuda") {
             if (!await isAdmin(sock, groupId, lidJid, senderJid)) return;
             const ayuda =
-                `╭━─━─━─≪✠≫─━─━─━╮\n` +
-                `   🤖  *A R T E M I S*\n` +
-                `  _Panel de Administración_\n` +
-                `╰━─━─━─≪✠≫─━─━─━╯\n\n` +
-                `╭━─━─━─≪✠≫─━─━─━╮\n` +
-                `  📋 *COMANDOS DE TEXTO*\n` +
-                `╰━─━─━─≪✠≫─━─━─━╯\n\n` +
+                `╔══〔 🤖 *A R T E M I S* 〕══╗\n` +
+                `║  _Panel de Administración_  ║\n` +
+                `╚═══════════════════════════╝\n\n` +
+                `╔══〔 📋 *COMANDOS DE TEXTO* 〕══╗\n` +
+                `╚════════════════════════════╝\n\n` +
                 `➕ *Crear comando*\n` +
                 `┌ .nuevo .comando\n` +
                 `└ Texto (soporta varias líneas)\n\n` +
@@ -432,15 +446,13 @@ async function startBot() {
                 `└ .eliminar .comando\n\n` +
                 `📋 *Ver comandos activos*\n` +
                 `└ .listar\n\n` +
-                `╭━─━─━─≪✠≫─━─━─━╮\n` +
-                `  🖼️ *COMANDOS DE IMAGEN*\n` +
-                `╰━─━─━─≪✠≫─━─━─━╯\n\n` +
+                `╔══〔 🖼️ *COMANDOS DE IMAGEN* 〕══╗\n` +
+                `╚═════════════════════════════╝\n\n` +
                 `📸 *Guardar imagen*\n` +
                 `┌ Responde una imagen con:\n` +
                 `└ .img .comando Texto opcional\n\n` +
-                `╭━─━─━─≪✠≫─━─━─━╮\n` +
-                `  ⚙️ *GESTIÓN DEL GRUPO*\n` +
-                `╰━─━─━─≪✠≫─━─━─━╯\n\n` +
+                `╔══〔 ⚙️ *GESTIÓN DEL GRUPO* 〕══╗\n` +
+                `╚════════════════════════════╝\n\n` +
                 `📢 *Aviso al grupo*\n` +
                 `└ .aviso Texto del mensaje\n\n` +
                 `🔗 *Link de invitación*\n` +
@@ -449,9 +461,8 @@ async function startBot() {
                 `└ .expulsar @usuario\n\n` +
                 `🔒 *Cerrar grupo:* .cerrargrupo\n` +
                 `🔓 *Abrir grupo:* .abrirgrupo\n\n` +
-                `╭━─━─━─≪✠≫─━─━─━╮\n` +
-                `  🛡️ *SEGURIDAD*\n` +
-                `╰━─━─━─≪✠≫─━─━─━╯\n\n` +
+                `╔══〔 🛡️ *SEGURIDAD* 〕══╗\n` +
+                `╚══════════════════════╝\n\n` +
                 `🚫 *Activar anti-links*\n` +
                 `└ .antilinks on\n\n` +
                 `✅ *Desactivar anti-links*\n` +
@@ -461,9 +472,9 @@ async function startBot() {
                 `└ Texto de las reglas\n\n` +
                 `👁️ *Ver reglas* (todos)\n` +
                 `└ .verreglas\n\n` +
-                `╭━─━─━─≪✠≫─━─━─━╮\n` +
-                `_Solo admins pueden usar estos comandos._\n` +
-                `╰━─━─━─≪✠≫─━─━─━╯`;
+                `╔═══════════════════════════════╗\n` +
+                `  _Solo admins pueden usar estos comandos._\n` +
+                `╚═══════════════════════════════╝`;
             await sock.sendMessage(from, { text: ayuda });
             return;
         }
@@ -581,13 +592,13 @@ async function startBot() {
                 await sock.sendMessage(from, { text: "📋 Este grupo no tiene reglas configuradas aún." });
             } else {
                 await sock.sendMessage(from, {
-                    text: `╭━─━─━─≪✠≫─━─━─━╮\n` +
+                    text: `╔═══════╗\n` +
                           `   📋 *REGLAS DEL GRUPO*\n` +
-                          `╰━─━─━─≪✠≫─━─━─━╯\n\n` +
+                          `╚═══════╝\n\n` +
                           `${reglas}\n\n` +
-                          `╭━─━─━─≪✠≫─━─━─━╮\n` +
+                          `╔═══════╗\n` +
                           `_Al estar en este grupo aceptas las reglas._\n` +
-                          `╰━─━─━─≪✠≫─━─━─━╯`
+                          `╚═══════╝`
                 });
             }
             return;
