@@ -1,4 +1,3 @@
-
 const {
     default: makeWASocket,
     useMultiFileAuthState,
@@ -529,8 +528,7 @@ async function startBot() {
             const caption = lineas[0].slice(5 + parteComando.length).trim() || "";
 
             if (!parteComando.startsWith(".")) {
-                await sock.sendMessage(from, { text: "❌ El comando debe empezar con punto.
-Ejemplo: .img .promo Texto opcional" });
+                await sock.sendMessage(from, { text: "❌ El comando debe empezar con punto.\nEjemplo: .img .promo Texto opcional" });
                 return;
             }
 
@@ -539,11 +537,7 @@ Ejemplo: .img .promo Texto opcional" });
                            msg.message?.extendedTextMessage?.contextInfo?.quotedMessage?.imageMessage;
 
             if (!imgMsg) {
-                await sock.sendMessage(from, { text: "❌ Responde a una imagen con .img .comando
-
-Ejemplo:
-1. Sube la imagen al grupo
-2. Respóndela con: .img .promo Texto opcional" });
+                await sock.sendMessage(from, { text: "❌ Responde a una imagen con .img .comando\n\nEjemplo:\n1. Sube la imagen al grupo\n2. Respóndela con: .img .promo Texto opcional" });
                 return;
             }
 
