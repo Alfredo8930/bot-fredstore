@@ -43,9 +43,7 @@ const AUTH_FOLDER = path.join(__dirname, "auth");
 // ==============================
 // COMANDOS POR DEFECTO
 // ==============================
-const DEFAULT_COMANDOS = {
-    ".bienvenida": "👋 *¡Bienvenido al grupo!*\n\nGracias por unirte.\nAquí encontrarás toda la información que necesitas.\n\n_Si tienes dudas, contacta a un administrador._"
-};
+const DEFAULT_COMANDOS = {};
 
 // ==============================
 // DB — un documento por grupo
@@ -83,18 +81,36 @@ async function deleteComando(groupId, comando) {
     );
 }
 
-// Obtiene la frase de bienvenida del grupo (si la guardó el admin)
-async function getFraseBienvenida(groupId) {
-    const doc = await col("grupos").findOne({ _id: groupId });
-    return doc?.fraseBienvenida || null;
+// Guardar imagen en MongoDB como base64 asociada a un comando
+async function saveImagen(groupId, comando, base64Data, mimetype, caption) {
+    const clave = comando.startsWith(".") ? comando.slice(1) : comando;
+    await col("imagenes").updateOne(
+        { _id: groupId },
+        { $set: { [`imgs.${clave}`]: { data: base64Data, mimetype, caption } } },
+        { upsert: true }
+    );
 }
 
-// Guarda una frase de bienvenida personalizada para el grupo
-async function saveFraseBienvenida(groupId, frase) {
-    await col("grupos").updateOne(
+// Obtener imagen de un comando
+async function getImagen(groupId, comando) {
+    const clave = comando.startsWith(".") ? comando.slice(1) : comando;
+    const doc = await col("imagenes").findOne({ _id: groupId });
+    return doc?.imgs?.[clave] || null;
+}
+
+// Listar comandos de imagen de un grupo
+async function listarImagenes(groupId) {
+    const doc = await col("imagenes").findOne({ _id: groupId });
+    if (!doc?.imgs) return [];
+    return Object.keys(doc.imgs).map(k => `.${k}`);
+}
+
+// Eliminar imagen
+async function deleteImagen(groupId, comando) {
+    const clave = comando.startsWith(".") ? comando.slice(1) : comando;
+    await col("imagenes").updateOne(
         { _id: groupId },
-        { $set: { fraseBienvenida: frase } },
-        { upsert: true }
+        { $unset: { [`imgs.${clave}`]: "" } }
     );
 }
 
@@ -125,7 +141,7 @@ async function isAdmin(sock, groupId, lidJid, senderJid) {
 
 const RESERVADOS = [
     ".nuevo", ".editar", ".eliminar", ".listar",
-    ".ayuda", ".cerrargrupo", ".abrirgrupo", ".expulsar", ".aviso", ".frase"
+    ".ayuda", ".cerrargrupo", ".abrirgrupo", ".expulsar", ".aviso", ".img"
 ];
 
 // ==============================
@@ -341,46 +357,45 @@ async function startBot() {
         if (firstLine === ".ayuda") {
             if (!await isAdmin(sock, groupId, lidJid, senderJid)) return;
             const ayuda =
-                `╔════════════════════════════╗\n` +
-                `║     🤖  *A R T E M I S*     ║\n` +
-                `║    Panel de Administración   ║\n` +
-                `╚════════════════════════════╝\n\n` +
-                `*── GESTIÓN DE COMANDOS ──*\n\n` +
+                `▭▬▬ ▬ ▬▬▛ • ▜▬▬ ▬ ▬▬▭\n` +
+                `   🤖  *A R T E M I S*\n` +
+                `  _Panel de Administración_\n` +
+                `▭▬▬ ▬ ▬▬▙ • ▟▬▬ ▬ ▬▬▭\n\n` +
+                `▭▬▬ ▬ ▬▬▛ • ▜▬▬ ▬ ▬▬▭\n` +
+                `  📋 *COMANDOS DE TEXTO*\n` +
+                `▭▬▬ ▬ ▬▬▙ • ▟▬▬ ▬ ▬▬▭\n\n` +
                 `➕ *Crear comando*\n` +
                 `┌ .nuevo .comando\n` +
-                `└ Texto del mensaje (puede tener\n  varias líneas)\n\n` +
-                `✏️ *Editar comando existente*\n` +
+                `└ Texto (soporta varias líneas)\n\n` +
+                `✏️ *Editar comando*\n` +
                 `┌ .editar .comando\n` +
-                `└ Nuevo texto del mensaje\n\n` +
-                `🗑️ *Eliminar comando*\n` +
+                `└ Nuevo texto\n\n` +
+                `🗑️ *Eliminar comando o imagen*\n` +
                 `└ .eliminar .comando\n\n` +
-                `📋 *Ver todos los comandos*\n` +
+                `📋 *Ver comandos activos*\n` +
                 `└ .listar\n\n` +
-                `👋 *Enviar mensaje de bienvenida*\n` +
-                `└ .bienvenida\n\n` +
-                `*── GESTIÓN DEL GRUPO ──*\n\n` +
+                `▭▬▬ ▬ ▬▬▛ • ▜▬▬ ▬ ▬▬▭\n` +
+                `  🖼️ *COMANDOS DE IMAGEN*\n` +
+                `▭▬▬ ▬ ▬▬▙ • ▟▬▬ ▬ ▬▬▭\n\n` +
+                `📸 *Guardar imagen*\n` +
+                `┌ Responde una imagen con:\n` +
+                `└ .img .comando Texto opcional\n\n` +
+                `▭▬▬ ▬ ▬▬▛ • ▜▬▬ ▬ ▬▬▭\n` +
+                `  ⚙️ *GESTIÓN DEL GRUPO*\n` +
+                `▭▬▬ ▬ ▬▬▙ • ▟▬▬ ▬ ▬▬▭\n\n` +
+                `📢 *Aviso a todos*\n` +
+                `┌ .aviso Texto\n` +
+                `└ (menciona a todos)\n\n` +
                 `👤 *Expulsar participante*\n` +
                 `└ .expulsar @usuario\n\n` +
-                `🔒 *Cerrar grupo* — solo admins escriben\n` +
+                `🔒 *Cerrar grupo*\n` +
                 `└ .cerrargrupo\n\n` +
-                `🔓 *Abrir grupo* — todos pueden escribir\n` +
+                `🔓 *Abrir grupo*\n` +
                 `└ .abrirgrupo\n\n` +
-                `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
-                `_Solo los administradores del grupo_\n` +
-                `_pueden ejecutar estos comandos._`;
+                `▭▬▬ ▬ ▬▬▛ • ▜▬▬ ▬ ▬▬▭\n` +
+                `_Solo admins pueden usar estos comandos._\n` +
+                `▭▬▬ ▬ ▬▬▙ • ▟▬▬ ▬ ▬▬▭`;
             await sock.sendMessage(from, { text: ayuda });
-            return;
-        }
-
-        // .bienvenida — editable desde WhatsApp con .editar .bienvenida
-        if (firstLine === ".bienvenida") {
-            if (!await isAdmin(sock, groupId, lidJid, senderJid)) {
-                await sock.sendMessage(from, { text: "⛔ Solo administradores." });
-                return;
-            }
-            const actuales = await getComandos(groupId);
-            const texto = actuales[".bienvenida"] || DEFAULT_COMANDOS[".bienvenida"];
-            await sock.sendMessage(from, { text: texto });
             return;
         }
 
@@ -505,32 +520,60 @@ async function startBot() {
         }
 
         // ==============================
-        // .frase — guarda frase de bienvenida personalizada
-        // Formato:
-        //   .frase Tu frase aquí
-        //   o
-        //   .frase
-        //   Frase multilínea
+        // .img — guardar imagen con comando
+        // Uso: responde a una imagen con .img .comando Descripción opcional
+        // Para ver imagen: escribe .comando (igual que cualquier otro comando)
+        // Para eliminar: .eliminar .comando (usa la colección de imágenes)
         // ==============================
-        if (firstLine.startsWith(".frase")) {
+        if (firstLine.startsWith(".img ")) {
             if (!await isAdmin(sock, groupId, lidJid, senderJid)) {
                 await sock.sendMessage(from, { text: "⛔ Solo administradores." });
                 return;
             }
 
-            const restoLinea1 = lineas[0].slice(6).trim();
-            const restoLineas = lineas.slice(1).join("\n").trim();
-            const frase = [restoLinea1, restoLineas].filter(Boolean).join("\n").trim();
+            const parteComando = lineas[0].slice(5).trim().split(" ")[0].toLowerCase();
+            const caption = lineas[0].slice(5 + parteComando.length).trim() || "";
 
-            if (!frase) {
-                await sock.sendMessage(from, {
-                    text: "❌ Escribe la frase:\n.frase Bienvenido a nuestro grupo 🎉\n\nEsta frase aparecerá cuando alguien entre al grupo."
-                });
+            if (!parteComando.startsWith(".")) {
+                await sock.sendMessage(from, { text: "❌ El comando debe empezar con punto.
+Ejemplo: .img .promo Texto opcional" });
                 return;
             }
 
-            await saveFraseBienvenida(groupId, frase);
-            await sock.sendMessage(from, { text: `✅ Frase de bienvenida guardada.` });
+            // La imagen debe venir en el mensaje citado (reply) o en el mismo mensaje
+            const imgMsg = msg.message?.imageMessage ||
+                           msg.message?.extendedTextMessage?.contextInfo?.quotedMessage?.imageMessage;
+
+            if (!imgMsg) {
+                await sock.sendMessage(from, { text: "❌ Responde a una imagen con .img .comando
+
+Ejemplo:
+1. Sube la imagen al grupo
+2. Respóndela con: .img .promo Texto opcional" });
+                return;
+            }
+
+            try {
+                const { downloadMediaMessage } = require("@whiskeysockets/baileys");
+                const buffer = await downloadMediaMessage(
+                    {
+                        key: msg.message?.extendedTextMessage?.contextInfo?.stanzaId
+                            ? { ...msg.key, id: msg.message.extendedTextMessage.contextInfo.stanzaId, remoteJid: from, participant: msg.message.extendedTextMessage.contextInfo.participant }
+                            : msg.key,
+                        message: msg.message?.extendedTextMessage?.contextInfo?.quotedMessage || msg.message
+                    },
+                    "buffer",
+                    {},
+                    { reuploadRequest: sock.updateMediaMessage }
+                );
+                const base64 = buffer.toString("base64");
+                const mimetype = imgMsg.mimetype || "image/jpeg";
+                await saveImagen(groupId, parteComando, base64, mimetype, caption);
+                await sock.sendMessage(from, { text: `✅ Imagen guardada en *${parteComando}*` });
+            } catch (err) {
+                console.error("Error guardando imagen:", err.message);
+                await sock.sendMessage(from, { text: "❌ No se pudo guardar la imagen. Intenta de nuevo." });
+            }
             return;
         }
 
@@ -538,6 +581,18 @@ async function startBot() {
         // RESPONDER COMANDOS PERSONALIZADOS
         // Usa solo la primera línea para buscar
         // ==============================
+        // Primero buscar si es un comando de imagen
+        const imgGuardada = await getImagen(groupId, firstLine);
+        if (imgGuardada) {
+            await sock.sendMessage(from, {
+                image: Buffer.from(imgGuardada.data, "base64"),
+                caption: imgGuardada.caption || "",
+                mimetype: imgGuardada.mimetype || "image/jpeg"
+            });
+            return;
+        }
+
+        // Luego buscar en comandos de texto
         const comandos = await getComandos(groupId);
         if (comandos[firstLine]) {
             await sock.sendMessage(from, { text: comandos[firstLine] });
