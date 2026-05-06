@@ -1,10 +1,3 @@
-const fs = require("fs");
-
-if (fs.existsSync("./auth")) {
-    fs.rmSync("./auth", { recursive: true, force: true });
-    console.log("🧹 Carpeta auth eliminada");
-}
-
 const {
     default: makeWASocket,
     useMultiFileAuthState,
@@ -114,6 +107,38 @@ async function deleteImagen(groupId, comando) {
     );
 }
 
+// ==============================
+// ANTILINKS — estado por grupo
+// ==============================
+async function getAntilinks(groupId) {
+    const doc = await col("grupos").findOne({ _id: groupId });
+    return doc?.antilinks === true;
+}
+
+async function setAntilinks(groupId, estado) {
+    await col("grupos").updateOne(
+        { _id: groupId },
+        { $set: { antilinks: estado } },
+        { upsert: true }
+    );
+}
+
+// ==============================
+// REGLAS — por grupo
+// ==============================
+async function getReglas(groupId) {
+    const doc = await col("grupos").findOne({ _id: groupId });
+    return doc?.reglas || null;
+}
+
+async function saveReglas(groupId, texto) {
+    await col("grupos").updateOne(
+        { _id: groupId },
+        { $set: { reglas: texto } },
+        { upsert: true }
+    );
+}
+
 // Al leer comandos reponemos el punto al inicio de cada clave
 function normalizarComandos(raw) {
     const result = {};
@@ -141,7 +166,8 @@ async function isAdmin(sock, groupId, lidJid, senderJid) {
 
 const RESERVADOS = [
     ".nuevo", ".editar", ".eliminar", ".listar",
-    ".ayuda", ".cerrargrupo", ".abrirgrupo", ".expulsar", ".aviso", ".img"
+    ".ayuda", ".cerrargrupo", ".abrirgrupo", ".expulsar", ".aviso", ".img", ".link",
+    ".antilinks", ".reglas", ".verreglas"
 ];
 
 // ==============================
@@ -216,6 +242,31 @@ async function startBot() {
         ).trim();
 
         if (!rawText) return;
+
+        // ==============================
+        // ANTILINKS — eliminar mensajes con links si está activo
+        // ==============================
+        const tieneLink = /https?:\/\/|chat\.whatsapp\.com\/|wa\.me\/|bit\.ly|t\.me/i.test(rawText);
+        if (tieneLink) {
+            const antilinkActivo = await getAntilinks(groupId);
+            if (antilinkActivo) {
+                const esAdminSender = await isAdmin(sock, groupId, lidJid, senderJid);
+                if (!esAdminSender) {
+                    try {
+                        await sock.sendMessage(from, {
+                            delete: msg.key
+                        });
+                        await sock.sendMessage(from, {
+                            text: `⛔ @${lidJid.split("@")[0]} los links no están permitidos en este grupo.`,
+                            mentions: [lidJid]
+                        });
+                    } catch (err) {
+                        console.error("Error eliminando link:", err.message);
+                    }
+                    return;
+                }
+            }
+        }
 
         // Primera línea en minúsculas para detectar el comando
         const lineas = rawText.split("\n");
@@ -357,13 +408,13 @@ async function startBot() {
         if (firstLine === ".ayuda") {
             if (!await isAdmin(sock, groupId, lidJid, senderJid)) return;
             const ayuda =
-                `▭▬▬ ▬ ▬▬▛ • ▜▬▬ ▬ ▬▬▭\n` +
+                `╭━─━─━─≪✠≫─━─━─━╮\n` +
                 `   🤖  *A R T E M I S*\n` +
                 `  _Panel de Administración_\n` +
-                `▭▬▬ ▬ ▬▬▙ • ▟▬▬ ▬ ▬▬▭\n\n` +
-                `▭▬▬ ▬ ▬▬▛ • ▜▬▬ ▬ ▬▬▭\n` +
+                `╰━─━─━─≪✠≫─━─━─━╯\n\n` +
+                `╭━─━─━─≪✠≫─━─━─━╮\n` +
                 `  📋 *COMANDOS DE TEXTO*\n` +
-                `▭▬▬ ▬ ▬▬▙ • ▟▬▬ ▬ ▬▬▭\n\n` +
+                `╰━─━─━─≪✠≫─━─━─━╯\n\n` +
                 `➕ *Crear comando*\n` +
                 `┌ .nuevo .comando\n` +
                 `└ Texto (soporta varias líneas)\n\n` +
@@ -374,27 +425,38 @@ async function startBot() {
                 `└ .eliminar .comando\n\n` +
                 `📋 *Ver comandos activos*\n` +
                 `└ .listar\n\n` +
-                `▭▬▬ ▬ ▬▬▛ • ▜▬▬ ▬ ▬▬▭\n` +
+                `╭━─━─━─≪✠≫─━─━─━╮\n` +
                 `  🖼️ *COMANDOS DE IMAGEN*\n` +
-                `▭▬▬ ▬ ▬▬▙ • ▟▬▬ ▬ ▬▬▭\n\n` +
+                `╰━─━─━─≪✠≫─━─━─━╯\n\n` +
                 `📸 *Guardar imagen*\n` +
                 `┌ Responde una imagen con:\n` +
                 `└ .img .comando Texto opcional\n\n` +
-                `▭▬▬ ▬ ▬▬▛ • ▜▬▬ ▬ ▬▬▭\n` +
+                `╭━─━─━─≪✠≫─━─━─━╮\n` +
                 `  ⚙️ *GESTIÓN DEL GRUPO*\n` +
-                `▭▬▬ ▬ ▬▬▙ • ▟▬▬ ▬ ▬▬▭\n\n` +
-                `📢 *Aviso a todos*\n` +
-                `┌ .aviso Texto\n` +
-                `└ (menciona a todos)\n\n` +
+                `╰━─━─━─≪✠≫─━─━─━╯\n\n` +
+                `📢 *Aviso al grupo*\n` +
+                `└ .aviso Texto del mensaje\n\n` +
+                `🔗 *Link de invitación*\n` +
+                `└ .link\n\n` +
                 `👤 *Expulsar participante*\n` +
                 `└ .expulsar @usuario\n\n` +
-                `🔒 *Cerrar grupo*\n` +
-                `└ .cerrargrupo\n\n` +
-                `🔓 *Abrir grupo*\n` +
-                `└ .abrirgrupo\n\n` +
-                `▭▬▬ ▬ ▬▬▛ • ▜▬▬ ▬ ▬▬▭\n` +
+                `🔒 *Cerrar grupo:* .cerrargrupo\n` +
+                `🔓 *Abrir grupo:* .abrirgrupo\n\n` +
+                `╭━─━─━─≪✠≫─━─━─━╮\n` +
+                `  🛡️ *SEGURIDAD*\n` +
+                `╰━─━─━─≪✠≫─━─━─━╯\n\n` +
+                `🚫 *Activar anti-links*\n` +
+                `└ .antilinks on\n\n` +
+                `✅ *Desactivar anti-links*\n` +
+                `└ .antilinks off\n\n` +
+                `📋 *Guardar reglas del grupo*\n` +
+                `┌ .reglas\n` +
+                `└ Texto de las reglas\n\n` +
+                `👁️ *Ver reglas* (todos)\n` +
+                `└ .verreglas\n\n` +
+                `╭━─━─━─≪✠≫─━─━─━╮\n` +
                 `_Solo admins pueden usar estos comandos._\n` +
-                `▭▬▬ ▬ ▬▬▙ • ▟▬▬ ▬ ▬▬▭`;
+                `╰━─━─━─≪✠≫─━─━─━╯`;
             await sock.sendMessage(from, { text: ayuda });
             return;
         }
@@ -468,6 +530,62 @@ async function startBot() {
         }
 
         // ==============================
+        // .antilinks on/off
+        if (firstLine === ".antilinks on" || firstLine === ".antilinks off") {
+            if (!await isAdmin(sock, groupId, lidJid, senderJid)) {
+                await sock.sendMessage(from, { text: "⛔ Solo administradores." });
+                return;
+            }
+            const estado = firstLine === ".antilinks on";
+            await setAntilinks(groupId, estado);
+            await sock.sendMessage(from, {
+                text: estado
+                    ? "🔒 *Antilinks activado*\nLos links serán eliminados automáticamente."
+                    : "🔓 *Antilinks desactivado*\nLos links están permitidos en el grupo."
+            });
+            return;
+        }
+
+        // .reglas — guardar reglas del grupo
+        if (firstLine.startsWith(".reglas")) {
+            if (!await isAdmin(sock, groupId, lidJid, senderJid)) {
+                await sock.sendMessage(from, { text: "⛔ Solo administradores." });
+                return;
+            }
+            const restoLinea1 = lineas[0].slice(7).trim();
+            const restoLineas = lineas.slice(1).join("\n").trim();
+            const textoReglas = [restoLinea1, restoLineas].filter(Boolean).join("\n").trim();
+
+            if (!textoReglas) {
+                await sock.sendMessage(from, {
+                    text: "❌ Escribe las reglas:\n.reglas\n1. Respeto ante todo\n2. No spam\n3. No links"
+                });
+                return;
+            }
+            await saveReglas(groupId, textoReglas);
+            await sock.sendMessage(from, { text: "✅ Reglas del grupo guardadas." });
+            return;
+        }
+
+        // .verreglas — ver reglas del grupo (todos pueden usarlo)
+        if (firstLine === ".verreglas") {
+            const reglas = await getReglas(groupId);
+            if (!reglas) {
+                await sock.sendMessage(from, { text: "📋 Este grupo no tiene reglas configuradas aún." });
+            } else {
+                await sock.sendMessage(from, {
+                    text: `╭━─━─━─≪✠≫─━─━─━╮\n` +
+                          `   📋 *REGLAS DEL GRUPO*\n` +
+                          `╰━─━─━─≪✠≫─━─━─━╯\n\n` +
+                          `${reglas}\n\n` +
+                          `╭━─━─━─≪✠≫─━─━─━╮\n` +
+                          `_Al estar en este grupo aceptas las reglas._\n` +
+                          `╰━─━─━─≪✠≫─━─━─━╯`
+                });
+            }
+            return;
+        }
+
         // .aviso — menciona a todos con un mensaje destacado
         // Solo admins. Formato:
         //   .aviso Texto en una línea
@@ -492,30 +610,32 @@ async function startBot() {
                 return;
             }
         
-            let mentions = [];
-            let textoMenciones = "";
-        
-            try {
-                const meta = await sock.groupMetadata(groupId);
-                mentions = meta.participants.map(p => p.id);
-        
-                textoMenciones = mentions
-                    .map(jid => "@" + jid.split("@")[0])
-                    .join(" ");
-            } catch {}
-        
             const mensajeAviso =
                 `📢 *AVISO IMPORTANTE*\n` +
                 `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
                 `${textoAviso}\n\n` +
-                `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
-                `${textoMenciones}`;
+                `━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
+
+            await sock.sendMessage(from, { text: mensajeAviso });
         
-            await sock.sendMessage(from, {
-                text: mensajeAviso,
-                mentions
-            });
-        
+            return;
+        }
+
+        // .link — genera el link de invitación del grupo
+        if (firstLine === ".link") {
+            if (!await isAdmin(sock, groupId, lidJid, senderJid)) {
+                await sock.sendMessage(from, { text: "⛔ Solo administradores." });
+                return;
+            }
+            try {
+                const code = await sock.groupInviteCode(groupId);
+                const link = `https://chat.whatsapp.com/${code}`;
+                await sock.sendMessage(from, {
+                    text: `🔗 *Link de invitación del grupo:*\n\n${link}\n\n_Este link puede ser usado por cualquiera para unirse al grupo._`
+                });
+            } catch {
+                await sock.sendMessage(from, { text: "❌ No se pudo obtener el link. El bot debe ser administrador." });
+            }
             return;
         }
 
@@ -594,62 +714,6 @@ async function startBot() {
         }
     });
 
-    // ==============================
-    // BIENVENIDA AUTOMÁTICA
-    // Se activa cuando alguien entra al grupo
-    // ==============================
-    sock.ev.on("group-participants.update", async ({ id, participants, action }) => {
-        if (action !== "add") return;
-    
-        try {
-            const user = participants[0];
-            const numero = user.split("@")[0];
-            const tag = "@" + numero;
-    
-            // 🔥 Nombre del grupo
-            let nombreGrupo = "Grupo";
-            try {
-                const meta = await sock.groupMetadata(id);
-                nombreGrupo = meta.subject;
-            } catch {}
-    
-            // 🔥 Frase personalizada del admin
-            let frase = await getFraseBienvenida(id);
-    
-            if (!frase) {
-                frase =
-    `🌸 BIENVENIDOS 🎀
-    ⇒ LEER REGLAS, LUEGO NO ME RECLAMEN ⇒
-    
-    🌸 Pedidos se entregan de 10min a 3hrs
-    🌸 Todo se resuelve y atiende en orden
-    🌸 REPORTES TARDAN 1-4 días
-    
-    ➡️ SI TU REPORTE PASA DE LOS 4 DÍAS, PASA A “SALDO A FAVOR”
-    NO SE REEMBOLSA, NO INSISTAS
-    
-    🕒 SOPORTE DE LUNES A SÁBADO`;
-            }
-    
-            // 🔥 Mensaje estilo tarjeta
-            const mensaje =
-    `🌟 *¡BIENVENIDO/A!* 🌟
-    
-    👤 *Usuario:* ${tag}
-    👥 *Grupo:* ${nombreGrupo}
-    
-    📌 *Descripción:*
-    ${frase}`;
-    
-            await sock.sendMessage(id, {
-                text: mensaje,
-                mentions: [user]
-            });
-    
-        } catch (err) {
-            console.error("Error bienvenida:", err);
-        }
-    });
 }
 
 process.on("uncaughtException", (err) => {
