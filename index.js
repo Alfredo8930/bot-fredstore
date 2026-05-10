@@ -1,10 +1,3 @@
-const fs = require("fs");
-
-if (fs.existsSync("./auth")) {
-    fs.rmSync("./auth", { recursive: true, force: true });
-    console.log("🧹 Carpeta auth eliminada");
-}
-
 const {
     default: makeWASocket,
     useMultiFileAuthState,
@@ -19,7 +12,7 @@ const path = require("path");
 // ==============================
 // MONGODB
 // ==============================
-const MONGO_URI = process.env.MONGO_URI || "mongodb+srv://joseaalfredo98_db_user:AS9yuOAQDohpl64M@cluster0.cvmbrsk.mongodb.net/?appName=Cluster0";
+const MONGO_URI = process.env.MONGO_URI;
 const DB_NAME = "whatsapp_bot"; // base separada, no toca kanestream
 
 let db;
@@ -105,13 +98,18 @@ async function listarImagenes(groupId) {
     return Object.keys(doc.imgs).map(k => `.${k}`);
 }
 
-// Eliminar imagen
+// Eliminar imagen — limpia documento si queda vacío
 async function deleteImagen(groupId, comando) {
     const clave = comando.startsWith(".") ? comando.slice(1) : comando;
     await col("imagenes").updateOne(
         { _id: groupId },
         { $unset: { [`imgs.${clave}`]: "" } }
     );
+    // Limpiar documento si imgs quedó vacío
+    const doc = await col("imagenes").findOne({ _id: groupId });
+    if (doc && (!doc.imgs || Object.keys(doc.imgs).length === 0)) {
+        await col("imagenes").deleteOne({ _id: groupId });
+    }
 }
 
 // ==============================
@@ -174,8 +172,22 @@ async function isAdmin(sock, groupId, lidJid, senderJid) {
 const RESERVADOS = [
     ".nuevo", ".editar", ".eliminar", ".listar",
     ".ayuda", ".cerrargrupo", ".abrirgrupo", ".expulsar", ".aviso", ".img", ".link",
-    ".antilinks", ".reglas", ".verreglas"
+    ".antilinks", ".reglas", ".verreglas", ".n"
 ];
+
+// ==============================
+// COOLDOWN — anti-spam (5s por usuario por grupo)
+// ==============================
+const cooldowns = new Map();
+const COOLDOWN_MS = 5000;
+
+function checkCooldown(groupId, jid) {
+    const key = `${groupId}:${jid}`;
+    const now = Date.now();
+    if (cooldowns.has(key) && now - cooldowns.get(key) < COOLDOWN_MS) return false;
+    cooldowns.set(key, now);
+    return true;
+}
 
 // ==============================
 // BOT
@@ -253,7 +265,7 @@ async function startBot() {
         // ==============================
         // ANTILINKS — eliminar mensajes con links si está activo
         // ==============================
-        const tieneLink = /https?:\/\/|chat\.whatsapp\.com\/|wa\.me\/|bit\.ly|t\.me/i.test(rawText);
+        const tieneLink = /https?:\/\/|www\.|chat\.whatsapp\.com\/|wa\.me\/|bit\.ly|t\.me|discord\.gg|discord\.com\/invite|t\.me\/|telegram\.me\/|\.com|\.net|\.io|\.org|\.xyz/i.test(rawText);
         if (tieneLink) {
             const antilinkActivo = await getAntilinks(groupId);
             if (antilinkActivo) {
@@ -382,7 +394,7 @@ async function startBot() {
             return;
         }
 
-        // .eliminar .comando
+        // .eliminar .comando — elimina texto e imagen
         if (firstLine.startsWith(".eliminar ")) {
             if (!await isAdmin(sock, groupId, lidJid, senderJid)) {
                 await sock.sendMessage(from, { text: "⛔ Solo administradores." });
@@ -390,12 +402,26 @@ async function startBot() {
             }
             const comando = firstLine.slice(10).trim();
             const actuales = await getComandos(groupId);
-            if (!actuales[comando]) {
+            const imgExiste = await getImagen(groupId, comando);
+            const textoExiste = !!actuales[comando];
+
+            if (!textoExiste && !imgExiste) {
                 await sock.sendMessage(from, { text: `❌ El comando *${comando}* no existe.` });
                 return;
             }
-            await deleteComando(groupId, comando);
-            await sock.sendMessage(from, { text: `🗑️ Comando *${comando}* eliminado.` });
+
+            const eliminados = [];
+            if (textoExiste) {
+                await deleteComando(groupId, comando);
+                eliminados.push("texto");
+            }
+            if (imgExiste) {
+                await deleteImagen(groupId, comando);
+                eliminados.push("imagen");
+            }
+            await sock.sendMessage(from, {
+                text: `🗑️ Comando *${comando}* eliminado (${eliminados.join(" y ")}).`
+            });
             return;
         }
 
@@ -454,6 +480,11 @@ async function startBot() {
                 `📸 *Guardar imagen*\n` +
                 `┌ Responde una imagen con:\n` +
                 `└ .img .comando Texto opcional\n\n` +
+                `━━━━━━━━┛ ✠ ┗━━━━━━━━\n` +
+                `  📨 *DIFUSIÓN*\n` +
+                `━━━━━━━━┓ ✠ ┏━━━━━━━━\n\n` +
+                `📩 *Reenviar mensaje al grupo*\n` +
+                `└ Responde cualquier msg con: .n\n\n` +
                 `━━━━━━━━┛ ✠ ┗━━━━━━━━\n` +
                 `  ⚙️ *GESTIÓN DEL GRUPO*\n` +
                 `━━━━━━━━┓ ✠ ┏━━━━━━━━\n\n` +
@@ -621,26 +652,25 @@ async function startBot() {
                 await sock.sendMessage(from, { text: "⛔ Solo administradores." });
                 return;
             }
-        
+
             const restoLinea1 = lineas[0].slice(6).trim();
             const restoLineas = lineas.slice(1).join("\n").trim();
             const textoAviso = [restoLinea1, restoLineas].filter(Boolean).join("\n").trim();
-        
+
             if (!textoAviso) {
                 await sock.sendMessage(from, {
                     text: "❌ Escribe el aviso:\n.aviso Texto del aviso"
                 });
                 return;
             }
-        
+
+            const pushName = msg.pushName || "Administrador";
             const mensajeAviso =
-                `📢 *AVISO IMPORTANTE*\n` +
-                `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
+                `╭━━━〔 📢 *AVISO DE ${pushName.toUpperCase()}* 〕━━━⬣\n\n` +
                 `${textoAviso}\n\n` +
-                `━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
+                `╰━━━━━━━━━━━━━━━━━━━━⬣`;
 
             await sock.sendMessage(from, { text: mensajeAviso });
-        
             return;
         }
 
@@ -691,6 +721,13 @@ async function startBot() {
                 return;
             }
 
+            // Validar tamaño de imagen (máx 5MB)
+            const fileLength = imgMsg.fileLength || imgMsg.fileEncSha256?.length || 0;
+            if (fileLength > 5 * 1024 * 1024) {
+                await sock.sendMessage(from, { text: "❌ La imagen es demasiado grande. Máximo permitido: 5MB." });
+                return;
+            }
+
             try {
                 const { downloadMediaMessage } = require("@whiskeysockets/baileys");
                 const buffer = await downloadMediaMessage(
@@ -719,6 +756,31 @@ async function startBot() {
         // RESPONDER COMANDOS PERSONALIZADOS
         // Usa solo la primera línea para buscar
         // ==============================
+        // .n — reenviar mensaje citado al grupo
+        if (firstLine === ".n") {
+            if (!await isAdmin(sock, groupId, lidJid, senderJid)) {
+                await sock.sendMessage(from, { text: "⛔ Solo administradores." });
+                return;
+            }
+            const quoted = msg.message?.extendedTextMessage?.contextInfo?.quotedMessage;
+            const quotedKey = {
+                remoteJid: from,
+                id: msg.message?.extendedTextMessage?.contextInfo?.stanzaId,
+                participant: msg.message?.extendedTextMessage?.contextInfo?.participant
+            };
+            if (!quoted) {
+                await sock.sendMessage(from, { text: "❌ Responde a un mensaje con .n para reenviarlo." });
+                return;
+            }
+            try {
+                await sock.copyNForward(from, { key: quotedKey, message: quoted }, true);
+            } catch (err) {
+                console.error("Error reenviando mensaje:", err.message);
+                await sock.sendMessage(from, { text: "❌ No se pudo reenviar el mensaje." });
+            }
+            return;
+        }
+
         // Primero buscar si es un comando de imagen
         const imgGuardada = await getImagen(groupId, firstLine);
         if (imgGuardada) {
