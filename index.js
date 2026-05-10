@@ -769,18 +769,73 @@ async function startBot() {
                 await sock.sendMessage(from, { text: "⛔ Solo administradores." });
                 return;
             }
-            const quoted = msg.message?.extendedTextMessage?.contextInfo?.quotedMessage;
-            const quotedKey = {
-                remoteJid: from,
-                id: msg.message?.extendedTextMessage?.contextInfo?.stanzaId,
-                participant: msg.message?.extendedTextMessage?.contextInfo?.participant
-            };
-            if (!quoted) {
+
+            const ctx = msg.message?.extendedTextMessage?.contextInfo;
+            const quoted = ctx?.quotedMessage;
+            const stanzaId = ctx?.stanzaId;
+            const participant = ctx?.participant;
+
+            if (!quoted || !stanzaId) {
                 await sock.sendMessage(from, { text: "❌ Responde a un mensaje con .n para reenviarlo." });
                 return;
             }
+
             try {
-                await sock.copyNForward(from, { key: quotedKey, message: quoted }, true);
+                // Detectar tipo de mensaje y reenviarlo correctamente
+                if (quoted.conversation || quoted.extendedTextMessage) {
+                    const texto = quoted.conversation || quoted.extendedTextMessage?.text || "";
+                    await sock.sendMessage(from, { text: texto });
+
+                } else if (quoted.imageMessage) {
+                    const { downloadMediaMessage } = require("@whiskeysockets/baileys");
+                    const buffer = await downloadMediaMessage(
+                        { key: { remoteJid: from, id: stanzaId, participant }, message: quoted },
+                        "buffer", {}, { reuploadRequest: sock.updateMediaMessage }
+                    );
+                    await sock.sendMessage(from, {
+                        image: buffer,
+                        caption: quoted.imageMessage.caption || "",
+                        mimetype: quoted.imageMessage.mimetype || "image/jpeg"
+                    });
+
+                } else if (quoted.videoMessage) {
+                    const { downloadMediaMessage } = require("@whiskeysockets/baileys");
+                    const buffer = await downloadMediaMessage(
+                        { key: { remoteJid: from, id: stanzaId, participant }, message: quoted },
+                        "buffer", {}, { reuploadRequest: sock.updateMediaMessage }
+                    );
+                    await sock.sendMessage(from, {
+                        video: buffer,
+                        caption: quoted.videoMessage.caption || "",
+                        mimetype: quoted.videoMessage.mimetype || "video/mp4"
+                    });
+
+                } else if (quoted.stickerMessage) {
+                    const { downloadMediaMessage } = require("@whiskeysockets/baileys");
+                    const buffer = await downloadMediaMessage(
+                        { key: { remoteJid: from, id: stanzaId, participant }, message: quoted },
+                        "buffer", {}, { reuploadRequest: sock.updateMediaMessage }
+                    );
+                    await sock.sendMessage(from, {
+                        sticker: buffer,
+                        mimetype: quoted.stickerMessage.mimetype || "image/webp"
+                    });
+
+                } else if (quoted.documentMessage) {
+                    const { downloadMediaMessage } = require("@whiskeysockets/baileys");
+                    const buffer = await downloadMediaMessage(
+                        { key: { remoteJid: from, id: stanzaId, participant }, message: quoted },
+                        "buffer", {}, { reuploadRequest: sock.updateMediaMessage }
+                    );
+                    await sock.sendMessage(from, {
+                        document: buffer,
+                        mimetype: quoted.documentMessage.mimetype,
+                        fileName: quoted.documentMessage.fileName || "archivo"
+                    });
+
+                } else {
+                    await sock.sendMessage(from, { text: "❌ Tipo de mensaje no soportado para reenviar." });
+                }
             } catch (err) {
                 console.error("Error reenviando mensaje:", err.message);
                 await sock.sendMessage(from, { text: "❌ No se pudo reenviar el mensaje." });
